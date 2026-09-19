@@ -1,3 +1,6 @@
+ALL CREDIT GOES TO louij2 AND THE ORIGINAL REPO https://github.com/louij2/steamos_custom_install
+
+
 # 🔧 Custom SteamOS Recovery Installer (External Drive–Friendly)
 
 This tool lets you install or repair SteamOS using **Valve’s official recovery image** — but with added support for external SSDs, USB drives, and non-NVMe devices.

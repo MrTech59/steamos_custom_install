@@ -59,7 +59,7 @@ Launch **Konsole** from the desktop, or press `Ctrl + Alt + T`.
 ### 3. Clone This Repo
 
 ```bash
-git clone https://github.com/louij2/steamos_custom_install.git
+git clone https://github.com/MrTech59/steamos_custom_install.git
 cd steamos_custom_install 
 ```
 ---

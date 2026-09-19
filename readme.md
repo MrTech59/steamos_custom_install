@@ -1,4 +1,4 @@
-ALL CREDIT GOES TO louij2 AND THE ORIGINAL REPO https://github.com/louij2/steamos_custom_install
+All credit for the original SteamOS installer and SATA/non-NVMe support goes to louij2. This repository contains modifications and additions made for this project.
 
 
 # 🔧 Custom SteamOS Recovery Installer (External Drive–Friendly)

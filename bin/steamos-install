@@ -70,6 +70,11 @@ Environment (still honoured, for compatibility with older instructions):
   FORCEBIOS=1           Enable the BIOS update step (Steam Deck hardware only).
   FORCECONTROLLER=1     Enable the controller firmware update step.
 
+Secure Boot:
+  After installing SteamOS and booting into it, run steamos-secureboot(8)
+  (see docs/secureboot.md) to set up generic PC Secure Boot.  The installer
+  itself does not modify firmware keys or enable Secure Boot.
+
 Examples:
   sudo $PROGNAME --list-disks
   sudo $PROGNAME --disk /dev/sda --dry-run all

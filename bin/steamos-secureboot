@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# -*- mode: sh; indent-tabs-mode: nil; sh-basic-offset: 2; -*-
+# vim: et sts=2 sw=2
+#
+# Generic UEFI Secure Boot configuration for SteamOS on normal x86-64 PCs.
+#
+# This is a post-install helper.  Install SteamOS first with repair_device.sh,
+# boot into the installed system, then run:
+#
+#     sudo steamos-secureboot setup
+#
+# It will create signing keys, sign the installed boot chain, install services
+# that re-sign files after SteamOS updates, and tell you how to enroll the
+# keys in UEFI.  It never enables Secure Boot automatically and never removes
+# Microsoft's certificates.
+
+set -euEo pipefail
+
+if [[ -z ${BASH_VERSINFO:-} ]] || (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) )); then
+  echo >&2 "!! This tool needs bash 4.4 or newer (found: ${BASH_VERSION:-not bash})."
+  exit 1
+fi
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+PROGNAME="${0##*/}"
+SCRIPTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export LIBDIR="${LIBDIR:-$SCRIPTDIR/../lib}"
+
+# shellcheck source=lib/log.sh
+source "$LIBDIR/log.sh"
+# shellcheck source=lib/disk.sh
+source "$LIBDIR/disk.sh"
+# shellcheck source=lib/secureboot.sh
+source "$LIBDIR/secureboot.sh"
+
+usage() {
+  cat >&2 <<EOD
+Configure UEFI Secure Boot for SteamOS on a generic PC.
+
+Usage: sudo $PROGNAME [options] <command>
+
+Commands:
+  setup   Create keys, sign the current boot chain, install update persistence,
+          and print enrollment instructions.  Must run from the installed
+          SteamOS system (where /esp and /efi are mounted).
+  sign    Re-sign the entire boot chain now (used by the boot-time service).
+  update  Sign only the inactive partset after a SteamOS update (used by the
+          post-update path unit).  Must run from the installed system.
+  enroll  Enroll keys into UEFI NVRAM (requires firmware Setup Mode).
+  status  Show sbctl status and signed/unsigned files.
+
+Options for setup:
+  -b, --key-backup DIR     Copy keys to DIR after creating them.
+  -y, --yes                Skip confirmation prompts.
+
+Options for sign:
+  -d, --disk DEVICE        Target whole disk.  Omit to use the running system.
+
+Options for enroll:
+  -y, --yes                Skip the "type ENROLL" confirmation.
+
+General options:
+  -n, --dry-run            Print every destructive command instead of running it.
+  -h, --help               Show this help.
+
+Examples:
+  sudo $PROGNAME setup
+  sudo $PROGNAME setup --key-backup /run/media/deck/keys
+  sudo $PROGNAME sign
+  sudo $PROGNAME update
+  sudo $PROGNAME enroll
+EOD
+}
+
+COMMAND=""
+DISK=""
+KEY_BACKUP=""
+YES=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d|--disk)      DISK="${2:?--disk needs a device}"; shift 2 ;;
+    --disk=*)       DISK="${1#*=}"; shift ;;
+    -b|--key-backup) KEY_BACKUP="${2:?--key-backup needs a directory}"; shift 2 ;;
+    --key-backup=*) KEY_BACKUP="${1#*=}"; shift ;;
+    -y|--yes)       YES=1; shift ;;
+    -n|--dry-run)   DRY_RUN=1; export DRY_RUN; shift ;;
+    -h|--help)      usage; exit 0 ;;
+    -*)             usage; die "Unknown option: $1" ;;
+    *)
+      [[ -z $COMMAND ]] || { usage; die "More than one command given: '$COMMAND' and '$1'"; }
+      COMMAND="$1"; shift ;;
+  esac
+done
+
+[[ -n $COMMAND ]] || { usage; exit 1; }
+
+case "$COMMAND" in
+  setup|sign|update|enroll|status) ;;
+  *) usage; die "Unknown command: $COMMAND" ;;
+esac
+
+if [[ $EUID -ne 0 && -z ${DRY_RUN:-} ]]; then
+  die "Please run as root, e.g. sudo $PROGNAME $COMMAND"
+fi
+
+err() {
+  local rc=$?
+  echo >&2
+  eerr "Failed at ${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]} (exit $rc)"
+  if [[ -n ${LAST_CMD:-} ]]; then
+    eerr "Last command run: $LAST_CMD"
+  else
+    eerr "Failing command: ${BASH_COMMAND}"
+  fi
+  stacktrace 1
+  eerr "Secure Boot setup failed."
+  exit "$rc"
+}
+trap err ERR
+
+onexit=()
+exithandler() {
+  local func
+  for func in "${onexit[@]+"${onexit[@]}"}"; do
+    [[ -n $func ]] || continue
+    # shellcheck disable=SC2086
+    $func || true
+  done
+}
+trap exithandler EXIT
+
+# Resolve the script's own path so the setup command can install a copy of it
+# into /var/lib for the update services.
+CLI_PATH="${BASH_SOURCE[0]}"
+[[ -e $CLI_PATH ]] || CLI_PATH="$SCRIPTDIR/$PROGNAME"
+
+case "$COMMAND" in
+  setup)
+    if [[ -n $DISK ]]; then
+      die "setup does not accept --disk. Run it from the installed SteamOS system, or use 'sign --disk'."
+    fi
+    secureboot_setup "$KEY_BACKUP" "$CLI_PATH"
+    ;;
+  sign)
+    secureboot_require_root
+    secureboot_require_tools
+    secureboot_sign_all "$DISK"
+    ;;
+  update)
+    secureboot_update
+    ;;
+  enroll)
+    secureboot_enroll_keys "$YES"
+    ;;
+  status)
+    secureboot_require_tools
+    secureboot_status_report
+    ;;
+esac
